@@ -4,6 +4,8 @@ from pathlib import Path
 from datetime import datetime
 import uuid
 from typing import Optional
+import boto3
+from botocore.exceptions import ClientError
 
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Body
 from fastapi.responses import RedirectResponse
@@ -60,6 +62,9 @@ def login(payload: dict = Body(...)):
     return {"access_token": token, "token_type": "bearer", "role": user["role"]}
 
 # --- Video upload (unstructured data) ---
+s3_client = boto3.client ("s3", region_name="ap-southeast-2")
+bucket_name = "A2-pair"
+
 @app.post("/videos/upload")
 def upload_video(
     file: UploadFile = File(...),
@@ -70,28 +75,36 @@ def upload_video(
     original_name = file.filename or "upload.mp4"
     suffix = Path(original_name).suffix or ".mp4"
     stored_name = f"{uuid.uuid4().hex}{suffix}"
-    dest = INCOMING_DIR / stored_name
+    #dest = INCOMING_DIR / stored_name
+    key = f"incoming/{stored_name}"
 
     # Save file to disk
-    with dest.open("wb") as f:
-        f.write(file.file.read())
+    #with dest.open("wb") as f:
+    #    f.write(file.file.read())
 
-    size = dest.stat().st_size
+    #size = dest.stat().st_size
 
-    v = Video(
-        owner=user["username"],
-        filename=stored_name,
-        orig_name=original_name,
-        size_bytes=size,
-        created_at=datetime.utcnow(),
-    )
-    db.add(v); db.commit(); db.refresh(v)
-    return {
-        "video_id": v.id,
-        "stored_name": stored_name,
-        "size_bytes": size,
-        "orig_name": original_name,
-    }
+    try:
+        s3_client.upload_fileobj(file.file, bucket_name, key)
+
+        head = s3_client.head_object(Bucket=bucket_name, Key=key)
+        size = head["ContentLength"]
+        v = Video(
+            owner=user["username"],
+            filename=stored_name,
+            orig_name=original_name,
+            size_bytes=size,
+            created_at=datetime.utcnow(),
+        )
+        db.add(v); db.commit(); db.refresh(v)
+        return {
+            "video_id": v.id,
+            "stored_name": stored_name,
+            "size_bytes": size,
+            "orig_name": original_name,
+        }
+    except ClientError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/videos")
 def list_videos(
