@@ -104,9 +104,7 @@ def upload_video(
             "orig_name": original_name,
         }
     except ClientError as e:
-        raise HTTPException(status_code=500, detail=str(
-            
-        ))
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/videos")
 def list_videos(
