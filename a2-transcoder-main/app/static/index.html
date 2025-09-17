@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Video Transcoder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #DDD0C8;       /* beige background */
+      --panel: #f3e8e1;    /* lighter beige panel */
+      --muted: #c2b8b2;    /* muted beige border */
+      --text: #323232;     /* dark grey text */
+      --accent: #323232;   /* dark grey button base */
+      --accent2: #444;     /* slightly darker grey for hover */
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+    }
+    .wrap { width:100%; max-width:980px; padding:28px; }
+    h1 { margin:0 0 18px; font-size:28px; letter-spacing:.3px; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+    .card {
+      background: var(--panel);
+      border:1px solid var(--muted);
+      border-radius:14px;
+      padding:18px;
+      margin-bottom:16px;
+      box-shadow: 0 6px 24px rgba(0,0,0,.15);
+    }
+    .step { font-weight:600; margin-bottom:8px; }
+    label { display:block; margin:8px 0 6px; }
+    input[type="file"], select, input[type="text"], input[type="password"] {
+      width:100%;
+      background:#fff;
+      border:1px solid var(--muted);
+      color: var(--text);
+      padding:12px;
+      border-radius:10px;
+    }
+    button {
+      padding:12px 14px;
+      border:0; border-radius:10px; font-weight:700; color:#fff; cursor:pointer;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+    }
+    button:hover { filter: brightness(1.1); }
+    .row { display:flex; gap:12px; }
+    .row > * { flex:1; }
+    .logs { white-space:pre-wrap; background:#fff; border:1px solid var(--muted); border-radius:10px; padding:12px; font-size:13px; color: var(--text); }
+    .pill { display:inline-block; padding:4px 10px; border-radius:999px; background:#fff; border:1px solid var(--muted); margin-right:6px; color: var(--text); }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+    .chk  { background:#fff; border:1px solid var(--muted); border-radius:10px; padding:10px; color: var(--text); }
+    .chk input { margin-right:8px; }
+    table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--muted); border-radius:10px; overflow:hidden; }
+    th, td { padding:10px; border-bottom:1px solid #e6ddd8; color: var(--text); }
+    th { text-align:left; background:#f9f4f1; }
+    .right { text-align:right; }
+    .spacer { height:8px; }
+    .hidden { display:none; }
+    .tiny { font-size: 13px; opacity:.85; user-select:none; }
+
+    /* video preview grid */
+    .vidgrid {
+      display: grid;
+      grid-template-columns: 1fr 1fr; /* 2 columns; auto-wrap on small screens */
+      gap: 12px;
+    }
+    @media (max-width: 720px) {
+      .vidgrid { grid-template-columns: 1fr; } /* 1 column on mobile */
+    }
+    .viditem {
+      background: #fff;
+      border: 1px solid var(--muted);
+      border-radius: 10px;
+      padding: 10px;
+      color: var(--text);
+    }
+    .viditem video {
+      width: 100%;
+      height: auto;
+      max-height: 260px;   /* small preview height */
+      background: #000;    /* letterbox background */
+      border-radius: 8px;
+      display: block;
+    }
+    .vidname {
+      margin-top: 8px;
+      font-size: 0.95rem;
+      word-break: break-all;
+    }
+
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <div class="topbar">
+      <h1>My Video Transcoder</h1>
+      <div id="userBar" class="hidden">
+        <span id="whoami"></span>
+        <span class="spacer" style="display:inline-block;width:8px;"></span>
+        <button id="btnLogout" type="button">Logout</button>
+      </div>
+    </div>
+
+    <!-- LOGIN CARD -->
+    <div id="loginCard" class="card">
+      <div class="step">Login</div>
+      <div class="row">
+        <div>
+          <label>Username</label>
+          <input type="text" id="loginUser" placeholder="E.g. kimia, sara, admin" />
+        </div>
+        <div>
+          <label>Password</label>
+          <input type="password" id="loginPass" />
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button id="btnLogin" type="button">Login</button>
+      </div>
+      <div id="loginMsg" style="margin-top:10px;"></div>
+    </div>
+
+    <!-- APP CONTENT (hidden until login) -->
+    <div id="appContent" class="hidden">
+
+      <!-- Upload -->
+      <div class="card">
+        <div class="step">1) Upload Video</div>
+        <input type="file" id="fileInput" accept="video/*" />
+        <div class="row" style="margin-top:10px;">
+          <button id="btnUpload">Upload</button>
+        </div>
+        <div id="uploadInfo" style="margin-top:10px;"></div>
+      </div>
+
+      <!-- Settings -->
+      <div class="card">
+        <div class="step">2) Choose Settings</div>
+        <div class="row">
+          <div>
+            <label>Format</label>
+            <select id="format">
+              <option value="mp4">MP4 (H.264/AAC)</option>
+            </select>
+          </div>
+        </div>
+
+        <label style="margin-top:10px;">Resolutions (pick one or more)</label>
+        <div class="grid">
+          <label class="chk"><input type="checkbox" class="res" value="1080p"> HD 1080p (1920×1080)</label>
+          <label class="chk"><input type="checkbox" class="res" value="720p">  HD 720p (1280×720)</label>
+          <label class="chk"><input type="checkbox" class="res" value="480p">  480p (854×480)</label>
+          <label class="chk"><input type="checkbox" class="res" value="360p">  360p (640×360)</label>
+        </div>
+
+        <div class="row" style="margin-top:8px;">
+          <button id="btnSelectAll" type="button">Select All</button>
+          <button id="btnClearAll"  type="button">Clear</button>
+        </div>
+
+        <div class="row" style="margin-top:8px;">
+          <button id="btnConvert">Convert</button>
+        </div>
+        <div id="convertInfo" style="margin-top:10px;"></div>
+      </div>
+
+      <!-- Status -->
+      <div class="card">
+        <div class="step">3) Status & Outputs</div>
+        <div id="statusLine" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span class="pill" id="statusPill">idle</span>
+          <span id="statusMsg"></span>
+          <label class="tiny" style="margin-left:auto;">
+            <input type="checkbox" id="toggleDebug"> Show technical details
+          </label>
+        </div>
+
+        <div id="debugBox" class="hidden" style="margin-top:8px;">
+          <div class="logs" id="logs">Logs will appear here…</div>
+        </div>
+
+        <div id="outputs" style="margin-top:10px;"></div>
+
+      </div>
+
+      <!-- History -->
+      <div class="card">
+        <div class="step">History</div>
+
+        <div id="adminFilterRow" class="row hidden" style="margin-bottom:8px;">
+          <div>
+            <label>View history for (admin)</label>
+            <select id="ownerFilter">
+              <option value="">All users</option>
+              <option value="kimia">kimia</option>
+              <option value="sara">sara</option>
+            </select>
+          </div>
+          <div class="spacer"></div>
+        </div>
+
+        <div class="row">
+          <div>
+            <h3 style="margin:6px 0;">Uploads</h3>
+            <table id="tblUploads">
+              <thead><tr><th>ID</th><th>Owner</th><th>Name</th><th class="right">Size (MB)</th><th>Created</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:10px;">
+          <div>
+            <h3 style="margin:6px 0;">Jobs</h3>
+            <table id="tblJobs">
+              <thead><tr><th>ID</th><th>Owner</th><th>Video</th><th>Status</th><th>Started</th><th>Finished</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div> <!-- /#appContent -->
+
+  </div>
+
+  <script>
+    // --- auth state ---
+    let token = null;
+    let currentUser = null; // {username, role}
+    let videoId = null;
+    let currentJobId = null;
+    let pollTimer = null;
+
+    // --- helpers ---
+    const $ = (id) => document.getElementById(id);
+    const show = (el, on) => el.classList[on ? "remove" : "add"]("hidden");
+    const setStatus = (txt) => { $("statusPill").textContent = txt; };
+
+    function saveToken(t){ localStorage.setItem("jwt", t); }
+    function loadToken(){ return localStorage.getItem("jwt"); }
+    function clearToken(){ localStorage.removeItem("jwt"); }
+
+    async function api(path, options={}){
+      const headers = options.headers || {};
+      if (token) headers["Authorization"] = "Bearer " + token;
+      return fetch(path, {...options, headers});
+    }
+
+    // --- login / logout ---
+    async function tryResumeSession(){
+      const t = loadToken();
+      if (!t) return false;
+      token = t;
+      const r = await api("/auth/me");
+      if (r.ok){
+        currentUser = await r.json();
+        afterLogin();
+        return true;
+      } else {
+        clearToken();
+        token = null;
+        return false;
+      }
+    }
+
+    $("btnLogin").onclick = async () => {
+      const username = $("loginUser").value.trim();
+      const password = $("loginPass").value.trim();
+      $("loginMsg").textContent = "";
+      try {
+        const res = await fetch("/auth/login", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Login failed");
+        token = data.access_token;
+        saveToken(token);
+        const me = await api("/auth/me");
+        currentUser = await me.json();
+        afterLogin();
+      } catch (e) {
+        $("loginMsg").textContent = e.message;
+      }
+    };
+
+    $("btnLogout").onclick = () => {
+      // clear auth/session
+      clearToken();
+      token = null;
+      currentUser = null;
+
+      // stop any polling
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = null;
+      videoId = null;
+      currentJobId = null;
+
+      // reset UI state
+      $("outputs").innerHTML = "";
+      $("logs").textContent = "Logged out.";
+      setStatus("idle");
+      $("uploadInfo").textContent = "";
+      $("convertInfo").textContent = "";
+      $("fileInput").value = "";
+      document.querySelectorAll(".res").forEach(cb => (cb.checked = false));
+
+      // show/hide sections
+      show($("userBar"), false);
+      show($("loginCard"), true);
+      show($("appContent"), false);
+      $("loginMsg").textContent = "Logged out.";
+    };
+
+    function afterLogin(){
+      // hard reset view for new session
+      $("outputs").innerHTML = "";
+      $("logs").textContent = "";
+      setStatus("idle");
+      $("uploadInfo").textContent = "";
+      $("convertInfo").textContent = "";
+      $("fileInput").value = "";
+      videoId = null;
+      currentJobId = null;
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }  
+
+      $("whoami").textContent = `${currentUser.username} (${currentUser.role})`;
+      show($("userBar"), true);
+      show($("loginCard"), false);
+      show($("appContent"), true);
+
+      // admin gets owner filter
+      show($("adminFilterRow"), currentUser.role === "admin");
+      loadHistory();
+    }
+
+    // --- upload ---
+    $("btnUpload").onclick = async () => {
+      try {
+        const f = $("fileInput").files[0];
+        if (!f) return alert("Choose a file first.");
+        const fd = new FormData();
+        fd.append("file", f);
+        const res = await api("/videos/upload", { method: "POST", body: fd });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Upload failed");
+        videoId = data.video_id;
+        $("uploadInfo").textContent = `Uploaded: id=${videoId}, size=${(data.size_bytes/1e6).toFixed(2)} MB`;
+        $("logs").textContent = "Upload complete.";
+        setStatus("ready");
+        loadHistory(); // refresh uploads list
+      } catch (e) {
+        $("logs").textContent = "Upload error: " + e.message;
+        setStatus("error");
+      }
+    };
+
+    // --- multi-resolution selectors ---
+    $("btnSelectAll").onclick = () => {
+      document.querySelectorAll(".res").forEach(cb => cb.checked = true);
+    };
+    $("btnClearAll").onclick = () => {
+      document.querySelectorAll(".res").forEach(cb => cb.checked = false);
+    };
+
+    // --- create job ---
+    $("btnConvert").onclick = async () => {
+      try {
+        if (!videoId) return alert("Upload a video first.");
+
+        const selected = Array.from(document.querySelectorAll(".res"))
+          .filter(cb => cb.checked).map(cb => cb.value);
+        if (selected.length === 0) return alert("Pick at least one resolution.");
+
+        const mapSpec = (label) => {
+          if (label === "1080p") return { width:1920, height:1080, crf:18, suffix:"1080p" };
+          if (label === "720p")  return { width:1280, height:720, crf:20, suffix:"720p"  };
+          if (label === "480p")  return { width:854,  height:480,  crf:22, suffix:"480p"  };
+          return                   { width:640,  height:360,  crf:24, suffix:"360p"  };
+        };
+        const renditions = selected.map(mapSpec);
+
+        const res = await api("/jobs/transcode", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ video_id: videoId, renditions })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Job create failed");
+
+        currentJobId = data.job_id;
+        $("convertInfo").textContent = `Created job #${currentJobId} with ${renditions.length} rendition(s)`;
+        $("logs").textContent = "Transcode started… polling status every 2s.";
+        setStatus("running");
+        startPolling();
+        loadHistory(); // refresh jobs list
+      } catch (e) {
+        $("logs").textContent = "Create job error: " + e.message;
+        setStatus("error");
+      }
+    };
+
+    // --- polling ---
+    function startPolling() {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(async () => {
+        const res = await api(`/jobs/${currentJobId}`);
+        const data = await res.json();
+
+        if (data.detail) {
+          $("logs").textContent = "Job not found.";
+          clearInterval(pollTimer);
+          return;
+        }
+
+        $("logs").textContent = JSON.stringify(data, null, 2);
+
+        if (data.status === "done" || data.status === "failed") {
+          clearInterval(pollTimer);
+          setStatus(data.status);
+
+          if (data.outputs && data.outputs.length) {
+            const items = data.outputs.map(o => {
+              const url = o.url || "";
+              const name = (o.path || "").split(/[\\/]/).pop();
+              return `
+                <div class="viditem">
+                  <video controls preload="metadata" playsinline src="${url}"></video>
+                  <div class="vidname">
+                    <a href="${url}" target="_blank" rel="noopener">${escapeHtml(name)}</a>
+                  </div>
+                </div>
+              `;
+            }).join("");
+
+            $("outputs").innerHTML = `<div class="vidgrid">${items}</div>`;
+          } else {
+            $("outputs").innerHTML = "";
+          }
+
+          loadHistory(); // update jobs table
+        }
+      }, 2000);
+    }
+
+    // --- history ---
+    $("ownerFilter")?.addEventListener("change", loadHistory);
+
+    // --- debug toggle ---
+    $("toggleDebug")?.addEventListener("change", (e) => {
+      const on = e.target.checked;
+      $("debugBox").classList[on ? "remove" : "add"]("hidden");
+    });
+
+    async function loadHistory(){
+      const owner = (currentUser.role === "admin") ? $("ownerFilter").value : undefined;
+
+      // uploads
+      const vu = await api(`/videos${owner !== undefined && owner !== "" ? ("?owner=" + owner) : ""}`);
+      const uploads = await vu.json();
+      renderUploads(uploads);
+
+      // jobs
+      const vj = await api(`/jobs${owner !== undefined && owner !== "" ? ("?owner=" + owner) : ""}`);
+      const jobs = await vj.json();
+      renderJobs(jobs);
+    }
+
+    function renderUploads(items){
+      const tb = $("tblUploads").querySelector("tbody");
+      tb.innerHTML = items.map(v => `
+        <tr>
+          <td>${v.id}</td>
+          <td>${v.owner}</td>
+          <td>${escapeHtml(v.orig_name || "")}</td>
+          <td class="right">${(v.size_bytes/1e6).toFixed(2)}</td>
+          <td>${formatDate(v.created_at)}</td>
+        </tr>
+      `).join("");
+    }
+
+    function renderJobs(items){
+      const tb = $("tblJobs").querySelector("tbody");
+      tb.innerHTML = items.map(j => `
+        <tr>
+          <td>${j.id}</td>
+          <td>${j.owner || ""}</td>
+          <td>${j.video_id}</td>
+          <td>${j.status}</td>
+          <td>${formatDate(j.started_at)}</td>
+          <td>${formatDate(j.finished_at)}</td>
+        </tr>
+      `).join("");
+    }
+
+    function formatDate(s){ if(!s) return ""; const d = new Date(s); return d.toLocaleString(); }
+    function escapeHtml(str){ return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+    // --- init ---
+    (async () => {
+      const ok = await tryResumeSession();
+      if (!ok) {
+        show($("loginCard"), true);
+      }
+    })();
+  </script>
+</body>
+</html>

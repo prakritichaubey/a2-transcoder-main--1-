@@ -1,0 +1,7 @@
+fastapi==0.112.2
+uvicorn[standard]==0.30.6
+pyjwt==2.9.0
+pydantic==2.8.2
+sqlalchemy==2.0.34
+python-multipart==0.0.9
+requests==2.32.3 # for the load_test.py file
