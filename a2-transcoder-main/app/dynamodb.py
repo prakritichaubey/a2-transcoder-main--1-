@@ -46,9 +46,9 @@ def save_video(video_id: str, owner: str, orig_name:str, stored_name: str, size_
         print(e)
         return None
     
-    def get_video(video_id: str):
+def get_video(video_id: str):
         try:
-            response = dynamodb.get_video(
+            response = dynamodb.get_item(
                 TableName = table_name,
                 Key={
                     "qut-username": {"S": qut_username},
@@ -60,12 +60,12 @@ def save_video(video_id: str, owner: str, orig_name:str, stored_name: str, size_
             print(e)
             return None
         
-    def list_videos(): 
+def list_videos(): 
         try:
             response = dynamodb.query(
                 TableName = table_name,
                 KeyConditionExpression="#pk = :username",
-                ExpressionAttributeNames={"#pk": "qut_username"},
+                ExpressionAttributeNames={"#pk": "qut-username"},
                 ExpressionAttributeValues={":username": {"S":qut_username}},
             )
             return response.get("Items", [])

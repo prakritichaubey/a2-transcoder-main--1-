@@ -6,6 +6,7 @@ import uuid
 from typing import Optional
 import boto3
 from botocore.exceptions import ClientError
+from .dynamodb import save_video, list_videos as db_list
 
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Body
 from fastapi.responses import RedirectResponse
@@ -97,6 +98,7 @@ def upload_video(
             created_at=datetime.utcnow(),
         )
         db.add(v); db.commit(); db.refresh(v)
+        save_video(str(v.id), user["username"], original_name, stored_name, size)
         return {
             "video_id": v.id,
             "stored_name": stored_name,
