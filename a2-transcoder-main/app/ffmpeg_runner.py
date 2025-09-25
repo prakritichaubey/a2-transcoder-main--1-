@@ -20,7 +20,6 @@ def _args_for_intensity(level: str) -> list[str]:
     # default: "high"
     return ["-c:v", "libx264", "-preset", "veryslow", "-threads", "0"]
 
-
 def _one(
     in_path: Path,
     out_path: Path,
@@ -29,9 +28,12 @@ def _one(
     crf: int,
     intensity: str,
 ) -> dict:
-    """
-    Run a single ffmpeg transcode and return result dict.
-    """
+    """Run a single ffmpeg transcode and return result dict."""
+    if not in_path.exists() or not in_path.is_file():
+        raise FileNotFoundError(f"Input not found: {in_path}")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
     scale = f"scale={width}:{height}:flags=lanczos"
     extra = _args_for_intensity(intensity)
 
@@ -52,15 +54,29 @@ def _one(
     dt = round(time.time() - t0, 2)
 
     if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or "ffmpeg failed")
+        stderr = (proc.stderr or "").strip()
+        raise RuntimeError(stderr or "ffmpeg failed")
 
-    return {"path": str(out_path), "cmd": " ".join(cmd), "seconds": dt}
+    return {
+        "path": str(out_path),
+        "name": out_path.name,
+        "cmd": " ".join(cmd),
+        "seconds": dt,
+        "width": width,
+        "height": height,
+        "crf": crf,
+        "intensity": intensity,
+    }
 
-
-def transcode(in_path: Path, out_dir: Path, specs: List[Dict[str, Any]], intensity: str = "high",) -> List[dict]:
+def transcode(
+    in_path: Path,
+    out_dir: Path,
+    specs: List[Dict[str, Any]],
+    intensity: str = "high",
+) -> List[dict]:
     """
     specs: list like [{"width":1920,"height":1080,"crf":24,"suffix":"1080p"}, ...]
-    Returns: list of {"path": str, "cmd": str, "seconds": float}
+    Returns: list of {"path": str, "name": str, "cmd": str, "seconds": float, ...}
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     results: List[dict] = []
@@ -74,7 +90,6 @@ def transcode(in_path: Path, out_dir: Path, specs: List[Dict[str, Any]], intensi
             crf = int(r.get("crf", 23))
             suffix = r.get("suffix", f"{w}x{h}")
             out_path = out_dir / f"{in_path.stem}_{suffix}.mp4"
-
             futures.append(ex.submit(_one, in_path, out_path, w, h, crf, intensity))
 
         for fut in as_completed(futures):
