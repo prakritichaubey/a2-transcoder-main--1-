@@ -5,23 +5,27 @@ from datetime import datetime
 import uuid
 from typing import Optional
 import boto3
+import tempfile
+import os
 from botocore.exceptions import ClientError
-from .dynamodb import save_video, list_videos as db_list
 
-from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Body
+
+from fastapi import APIRouter,FastAPI, UploadFile, File, Depends, HTTPException, Body
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from sqlalchemy.orm import Session
 
-from .auth import USERS, create_access_token, get_current_user
-from .models import init_db, get_session, Video
-from .jobs import router as jobs_router, DATA_DIR, INCOMING_DIR
+from app.auth import USERS, create_access_token, get_current_user
+from app.models import init_db, get_session, Video
+from app.jobs import router as jobs_router, DATA_DIR, INCOMING_DIR
+from app.dynamodb import save_video, list_videos as db_list
 
 app = FastAPI(title="CAB432 Video Transcoder")
+router = APIRouter()
 # Serve the frontend
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+app.mount("/static", StaticFiles(directory="./app/static"), name="static")
 
 # Serve transcoded files so the UI can download them
 app.mount("/outputs", StaticFiles(directory="app/data/outputs"), name="outputs")
@@ -63,8 +67,31 @@ def login(payload: dict = Body(...)):
     return {"access_token": token, "token_type": "bearer", "role": user["role"]}
 
 # --- Video upload (unstructured data) ---
-s3_client = boto3.client ("s3", region_name="ap-southeast-2")
-bucket_name = "A2-pair"
+s3_client = boto3.client ("s3", 
+                          endpoint_url="http://localhost:9000", 
+                          aws_access_key_id="minioadmin", 
+                          aws_secret_access_key="minioadmin")#region_name="ap-southeast-2")
+def download_S3_file(bucket_name: str, object_key: str):
+    temp_file = tempfile.NamedTemporaryFile(delete=False)
+    temp_file.close()  # Close the file so boto3 can write to it
+
+    s3_client.download_file(bucket_name, object_key)
+    return temp_file.name
+    
+bucket_name = "a2-pair2"
+
+def bucket_check(bucket_name: str):
+    try:
+        s3_client.head_bucket(Bucket=bucket_name)
+        print(f"Bucket '{bucket_name}' exists.")
+    except ClientError as e:
+        error_code = int(e.response['Error']['Code'])
+        if error_code == 404:
+            print(f"Bucket '{bucket_name}' does not exist. Creating bucket...")
+            s3_client.create_bucket(Bucket=bucket_name)
+            print(f"Bucket '{bucket_name}' created.")
+        else:
+            print(f"Error checking bucket: {e}")
 
 @app.post("/videos/upload")
 def upload_video(
@@ -72,12 +99,15 @@ def upload_video(
     user=Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
+    bucket_check(bucket_name)
+
     # filename can be None in types; provide a safe fallback
     original_name = file.filename or "upload.mp4"
     suffix = Path(original_name).suffix or ".mp4"
     stored_name = f"{uuid.uuid4().hex}{suffix}"
     #dest = INCOMING_DIR / stored_name
     key = f"incoming/{stored_name}"
+   # local_file_path = download_S3_file(bucket_name, key)
 
     # Save file to disk
     #with dest.open("wb") as f:
@@ -98,7 +128,7 @@ def upload_video(
             created_at=datetime.utcnow(),
         )
         db.add(v); db.commit(); db.refresh(v)
-        save_video(str(v.id), user["username"], original_name, stored_name, size)
+        save_video(str(v.id), user["username"], original_name, stored_name, size) 
         return {
             "video_id": v.id,
             "stored_name": stored_name,
@@ -106,7 +136,8 @@ def upload_video(
             "orig_name": original_name,
         }
     except ClientError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"S3 Upload Failed: {str(e)}")
+
 
 @app.get("/videos")
 def list_videos(
