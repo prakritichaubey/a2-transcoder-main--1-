@@ -29,7 +29,7 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
 # Expose the API port (match your docker run -p 8000:8000)
-EXPOSE 8000
+EXPOSE 8080
 
 # Start the API
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
