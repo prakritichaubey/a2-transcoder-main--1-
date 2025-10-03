@@ -4,9 +4,8 @@ from datetime import datetime
 import os
 
 qut_username = "n11462221@qut.edu.au"
-region = "ap-southeast-2"
-table_name = "a2-pair-table"
-
+region = os.getenv("AWS_REGION","ap-southeast-2")
+table_name = os.getenv("DYNAMODB_TABLE", "a2-pair2-videos")
 dynamodb = boto3.client("dynamodb", region_name=region)
 
 def create_table():
@@ -28,23 +27,18 @@ def create_table():
         print(e)
 
 def save_video(video_id: str, username: str, orig_name:str, stored_name: str, size_bytes: int):
-    try:
-        response = dynamodb.put_item(
-            TableName=table_name,
-            Item={
-                "qut-username": {"S": username},
-                "video_id": {"S": video_id},
-                "owner":{"S":username},
-                "orig_name":{"S":orig_name},
-                "stored_name":{"S":stored_name},
-                "size_bytes":{"N":str(size_bytes)},
-                "created_at":{"S":datetime.utcnow().isoformat()},
-            },
-        )
-        return response
-    except ClientError as e:
-        print(e)
-        return None
+    dynamodb.put_item(
+        TableName=table_name,
+        Item={
+            "qut-username": {"S": username},
+            "video_id": {"S": video_id},
+            "orig_name": {"S": orig_name},
+            "stored_name": {"S": stored_name},
+            "size_bytes": {"N": str(size_bytes)},
+            #"status": {"S": status},
+            "created_at": {"S": datetime.utcnow().isoformat()},
+        }
+    )
     
 def get_video(video_id: str, username: str):
         try:
@@ -61,14 +55,10 @@ def get_video(video_id: str, username: str):
             return None
         
 def list_videos(username: str): 
-        try:
-            response = dynamodb.query(
-                TableName = table_name,
-                KeyConditionExpression="#pk = :username",
-                ExpressionAttributeNames={"#pk": "qut-username"},
-                ExpressionAttributeValues={":username": {"S":username}},
-            )
-            return response.get("Items", [])
-        except ClientError as e:
-            print(e)
-            return []
+    resp = dynamodb.query(
+        TableName=table_name,
+        KeyConditionExpression="#pk = :user",
+        ExpressionAttributeNames={"#pk": "qut-username"},
+        ExpressionAttributeValues={":user": {"S": username}},
+    )
+    return resp.get("Items", [])
