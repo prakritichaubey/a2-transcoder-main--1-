@@ -1,26 +1,35 @@
-# base
-FROM python:3.11-slim
+# ---- base image ----
+FROM python:3.12-slim
 
-# install ffmpeg (CPU encoder)
+# System deps (ffmpeg + certs); keep image small
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ffmpeg ca-certificates && \
+    ffmpeg ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-# create workdir
+# Workdir
 WORKDIR /app
 
-# Copy and install deps first (cached layer)
+# ---- python deps (cached) ----
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app code
+# ---- app code ----
+# Copy your package; no need to re-copy static separately
 COPY app ./app
-COPY app/static ./app/static
 
-# Ensure data folders exist
+# Ensure runtime dirs exist
 RUN mkdir -p /app/app/data/incoming /app/app/data/outputs
 
-ENV PYTHONUNBUFFERED=1
+# Run as non-root
+RUN useradd -m appuser && chown -R appuser:appuser /app
+USER appuser
+
+# Runtime env
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Expose the API port (match your docker run -p 8000:8000)
 EXPOSE 8000
 
+# Start the API
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

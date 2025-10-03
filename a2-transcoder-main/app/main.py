@@ -4,8 +4,9 @@ from pathlib import Path
 from datetime import datetime
 import uuid
 from typing import Optional
+import os
 
-from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Body
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Body, Header, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 
@@ -15,6 +16,8 @@ from .services.storage import put_bytes, presign_get, get_stream
 from .auth import USERS, create_access_token, get_current_user
 from .models import init_db, get_session, Video
 from .jobs import router as jobs_router
+from app.s3_utils import presign_upload, presign_download
+from app.dynamodb import new_video, update_status, list_videos, get_video
 
 # ---- App ----
 app = FastAPI(title="CAB432 Video Transcoder")
@@ -148,3 +151,61 @@ def download_video(
     stream, content_type = get_stream(v.filename)
     return StreamingResponse(stream, media_type=content_type)
 
+def get_owner(x_user: str | None = Header(None)):
+    # Minimal owner identity for now; replace with real auth later
+    return x_user or "demo"
+
+@app.post("/videos/upload-url")
+def get_upload_url(
+    filename: str = Query(..., description="original filename, e.g., movie.mp4"),
+    owner: str = Depends(get_owner),
+):
+    bucket = os.getenv("S3_BUCKET")
+    if not bucket:
+        raise HTTPException(500, "S3_BUCKET env not set")
+
+    video_id = str(uuid4())
+    s3_key = f"{owner}/{video_id}/{filename}"
+
+    _vid = new_video(owner, s3_key, title=filename)
+
+    presigned = presign_upload(bucket, s3_key, expires=3600)
+    return {"video_id": _vid, "bucket": bucket, "key": s3_key, "presigned": presigned}
+
+@app.post("/videos/complete")
+def mark_uploaded(payload: dict = Body(...), owner: str = Depends(get_owner)):
+    """
+    Client calls this after a successful presigned POST upload.
+    body: { "video_id": "..." }
+    """
+    video_id = payload.get("video_id")
+    if not video_id:
+        raise HTTPException(400, "video_id required")
+    update_status(owner, video_id, "UPLOADED")
+    return {"ok": True}
+
+@app.post("/videos/{video_id}/processing")
+def mark_processing(video_id: str, owner: str = Depends(get_owner)):
+    update_status(owner, video_id, "PROCESSING")
+    return {"ok": True}
+
+@app.post("/videos/{video_id}/done")
+def mark_done(video_id: str, payload: dict = Body(None), owner: str = Depends(get_owner)):
+    outputs = payload.get("outputs") if payload else None   # e.g., [{"profile":"720p","key":"..."}]
+    update_status(owner, video_id, "DONE", outputs=outputs)
+    return {"ok": True}
+
+@app.get("/videos")
+def my_videos(owner: str = Depends(get_owner)):
+    return {"items": list_videos(owner)}
+
+@app.get("/videos/{video_id}/download-url")
+def get_download_url(video_id: str, owner: str = Depends(get_owner)):
+    bucket = os.getenv("S3_BUCKET")
+    if not bucket:
+        raise HTTPException(500, "S3_BUCKET env not set")
+    item = get_video(owner, video_id)
+    if not item:
+        raise HTTPException(404, "Video not found")
+    url = presign_download(bucket, item["s3_key"], expires=3600)
+    return {"url": url}
