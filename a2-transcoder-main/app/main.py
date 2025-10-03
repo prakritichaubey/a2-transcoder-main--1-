@@ -17,7 +17,7 @@ from .auth import USERS, create_access_token, get_current_user
 from .models import init_db, get_session, Video
 from .jobs import router as jobs_router
 from app.s3_utils import presign_upload, presign_download
-from app.dynamodb import new_video, update_status, list_videos, get_video
+from app.dynamodb import new_video, update_status, list_videos as ddb_list_videos, get_video
 
 # ---- App ----
 app = FastAPI(title="CAB432 Video Transcoder")
@@ -100,9 +100,9 @@ def upload_video(
     "orig_name": original_name,
 }
 
-# ---- Video listing ----
-@app.get("/videos")
-def list_videos(
+# ---- Video listing (SQLAlchemy) ----
+@app.get("/videos-sql")
+def list_videos_sql(
     owner: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
@@ -122,7 +122,7 @@ def list_videos(
             "id": v.id,
             "owner": v.owner,
             "orig_name": v.orig_name,
-            "stored_name": v.filename, # this is the object key
+            "stored_name": v.filename,
             "size_bytes": v.size_bytes,
             "created_at": v.created_at.isoformat() if v.created_at else None,
         }
@@ -197,7 +197,7 @@ def mark_done(video_id: str, payload: dict = Body(None), owner: str = Depends(ge
 
 @app.get("/videos")
 def my_videos(owner: str = Depends(get_owner)):
-    return {"items": list_videos(owner)}
+    return {"items": ddb_list_videos(owner)}
 
 @app.get("/videos/{video_id}/download-url")
 def get_download_url(video_id: str, owner: str = Depends(get_owner)):
